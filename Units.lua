@@ -3,12 +3,18 @@ _addon.author = 'Meliora'
 _addon.version = '1.1.0'
 _addon.commands = {'units'}
 
+-----------------------------------------------------------
+-- Imports
+-----------------------------------------------------------
 require('lists')
 require('logger')
 packets = require('packets')
-
 texts = require('texts')
 config = require('config')
+
+-----------------------------------------------------------
+-- Default Settings
+-----------------------------------------------------------
 
 local default_settings = {
     pos = {
@@ -38,6 +44,14 @@ local default_settings = {
     }
 }
 
+-----------------------------------------------------------
+-- Initialize 
+-----------------------------------------------------------
+
+local counter = 0
+local refresh_rate = 2
+local refresh_delay = 0.4
+
 local settings = config.load(default_settings)
 local text_box = texts.new(settings)
 text_box:visible(false)
@@ -53,6 +67,10 @@ local requests = {
     [0x118] = packets.new('outgoing', 0x115)
 }
 
+-----------------------------------------------------------
+-- Helper And Format Functions
+-----------------------------------------------------------
+
 local function comma_value(n)
     local left, num, right = string.match(n, '^([^%d]*%d)(%d*)(.-)$')
     return left .. (num:reverse():gsub('(%d%d%d)', '%1,'):reverse()) .. right
@@ -65,6 +83,10 @@ local function format_value(value)
     end
     return comma_value(str)
 end
+
+-----------------------------------------------------------
+--               ! ! DO NOT EDIT BELOW ! !
+-----------------------------------------------------------
 
 local function update_text_box()
     local header = ('Apollyon & Temenos Units')
@@ -92,6 +114,17 @@ local function request_update()
 end
 
 windower.register_event('incoming chunk', function(id, data)
+    if id == 0x02D then
+        local zone = windower.ffxi.get_info().zone
+        if zone == 37 or zone == 38 then
+            counter = counter + 1
+            if counter % refresh_rate == 0 then
+                coroutine.schedule(request_update, refresh_delay)
+            end
+        end
+        return
+    end
+
     if id ~= 0x118 then
         return
     end
@@ -116,6 +149,7 @@ windower.register_event('incoming chunk', function(id, data)
     end
 end)
 
+
 windower.register_event('load', function()
     local info = windower.ffxi.get_info()
     if info.logged_in then
@@ -138,6 +172,7 @@ windower.register_event('logout', function()
 end)
 
 windower.register_event('zone change', function(zone)
+    counter = 0
     if zone == 37 or zone == 38 then -- Only display inside Limbus (Apollyon & Temenos)
         request_update()
         text_box:visible(true)
@@ -160,5 +195,5 @@ windower.register_event('addon command', function(cmd, ...)
         return
     end
 
-    log('Unknown command. Use //atem help for a list of commands.')
+    log('Unknown command. Use //units help for a list of commands.')
 end)
