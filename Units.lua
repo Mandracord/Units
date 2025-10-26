@@ -50,7 +50,7 @@ local default_settings = {
 
 local counter = 0
 local refresh_rate = 2
-local refresh_delay = 0.4
+local refresh_delay = 1
 
 local settings = config.load(default_settings)
 local text_box = texts.new(settings)
