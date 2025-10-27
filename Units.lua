@@ -1,6 +1,6 @@
 _addon.name = 'Units'
 _addon.author = 'Meliora'
-_addon.version = '1.1.0'
+_addon.version = '1.1.1'
 _addon.commands = {'units'}
 
 -----------------------------------------------------------
@@ -57,6 +57,7 @@ local text_box = texts.new(settings)
 text_box:visible(false)
 
 local player_name = nil
+local hud_hidden = false
 local last_values = {
     ['Apollyon Units'] = 0,
     ['Temenos Units'] = 0
@@ -100,7 +101,9 @@ local function update_text_box()
 
     local body = table.concat(lines, '\n')
     text_box:text(body)
-    text_box:visible(true)
+    if not hud_hidden then
+        text_box:visible(true)
+    end
 end
 
 local function request_update()
@@ -110,6 +113,10 @@ local function request_update()
 
     for _, packet in pairs(requests) do
         packets.inject(packet)
+    end
+
+    if text_box:visible(true) then 
+        text_box:visible(false)
     end
 end
 
@@ -169,13 +176,16 @@ windower.register_event('logout', function()
     last_values['Apollyon Units'] = 0
     last_values['Temenos Units'] = 0
     display_initialized = false
+    hud_hidden = false
 end)
 
 windower.register_event('zone change', function(zone)
     counter = 0
     if zone == 37 or zone == 38 then -- Only display inside Limbus (Apollyon & Temenos)
         request_update()
-        text_box:visible(true)
+        if not hud_hidden then
+            update_text_box()
+        end
     else
         text_box:visible(false)
     end
@@ -188,9 +198,11 @@ windower.register_event('addon command', function(cmd, ...)
         log('Commands: //units show | hide')
         return
     elseif cmd == 'show' then
+        hud_hidden = false
         update_text_box()
         return
     elseif cmd == 'hide' then
+        hud_hidden = true
         text_box:visible(false)
         return
     end
