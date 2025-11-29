@@ -2,8 +2,10 @@
 
 ![GitHub Downloads](https://img.shields.io/github/downloads/Mandracord/Units/total) ![Latest Release](https://img.shields.io/github/v/release/Mandracord/Units) ![GitHub last commit](https://img.shields.io/github/last-commit/Mandracord/Units)
 
+## Notice on Packets
 
-An addon to display and update in real-time, Limbus Units for Apollyon & Temenos
+This  addon sends a single client request packet (0x115) to refresh your Limbus Unit totals.
+This is the same packet the game sends when you open the Limbus NPC menu — nothing is being modified or altered. 
 
 ## Example
 
