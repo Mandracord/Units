@@ -9,6 +9,8 @@ function commands.register(context)
             log('Units v'..context.version)
             log('  //units show                  - Show the HUD')
             log('  //units hide                  - Hide the HUD')
+            log('  //units mini                  - Use the minimal HUD')
+            log('  //units full                  - Use the full HUD')
             log('  //units sector <sector>       - Mark a sector Opened manually')
             log('    Apollyon: NW NE SW SE')
             log('    Temenos:  N  W  E  C')
@@ -22,6 +24,27 @@ function commands.register(context)
 
         elseif cmd == 'hide' then
             context.hide_hud()
+            return
+
+        elseif cmd == 'mini' then
+            context.set_hud_layout('minimal')
+            log('HUD layout set to mini.')
+            return
+
+        elseif cmd == 'full' then
+            context.set_hud_layout('full')
+            log('HUD layout set to full.')
+            return
+
+        elseif cmd == 'layout' then
+            local value = (args[1] or ''):lower()
+            if value == 'full' or value == 'minimal' then
+                context.set_hud_layout(value)
+                log('HUD layout set to '..context.get_hud_layout()..'.')
+            else
+                log('Current HUD layout: '..context.get_hud_layout())
+                log('Usage: //units layout full|minimal')
+            end
             return
 
         elseif cmd == 'sector' then

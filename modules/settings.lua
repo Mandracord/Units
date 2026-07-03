@@ -8,6 +8,9 @@ return {
         draggable = true
     },
     padding = 5,
+    units = {
+        layout = 'full'
+    },
     text = {
         font = 'Consolas',
         size = 11,

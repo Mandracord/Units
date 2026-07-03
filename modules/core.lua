@@ -36,6 +36,7 @@ local packet_reward_amount = reward_packets.packet_reward_amount
 local counter = 0
 local refresh_rate = 2
 local refresh_delay = 1
+local BONUS_SHARD_GRACE = 10
 
 local settings = config.load(default_settings)
 local text_box = texts.new(settings)
@@ -43,6 +44,10 @@ text_box:visible(false)
 
 local player_name = nil
 local hud_hidden = false
+local hud_layout = settings.units and settings.units.layout or 'full'
+if hud_layout ~= 'minimal' then
+    hud_layout = 'full'
+end
 local current_units = {
     ['Apollyon Units'] = 0,
     ['Temenos Units'] = 0
@@ -108,6 +113,13 @@ local pending_reward = {
 local recent_chest_open = {
     zone = nil,
     sector = nil,
+    timestamp = 0,
+}
+local bonus_shard_window = {
+    zone = nil,
+    sector = nil,
+    chest_timestamp = 0,
+    count = 0,
     timestamp = 0,
 }
 local last_action = {
@@ -204,10 +216,19 @@ local function clear_pending_reward()
     pending_reward.timestamp = 0
 end
 
+local function clear_bonus_shard_window()
+    bonus_shard_window.zone = nil
+    bonus_shard_window.sector = nil
+    bonus_shard_window.chest_timestamp = 0
+    bonus_shard_window.count = 0
+    bonus_shard_window.timestamp = 0
+end
+
 local function clear_recent_chest_open()
     recent_chest_open.zone = nil
     recent_chest_open.sector = nil
     recent_chest_open.timestamp = 0
+    clear_bonus_shard_window()
 end
 
 local function clear_last_action()
@@ -249,6 +270,7 @@ local function mark_pending_chest_open(sector)
     recent_chest_open.zone = active_zone
     recent_chest_open.sector = sector
     recent_chest_open.timestamp = pending_chest_open.timestamp
+    clear_bonus_shard_window()
 end
 
 local function pending_reward_active()
@@ -326,6 +348,7 @@ function update_text_box()
         limbus_temp_items = limbus_temp_items,
         climb_remaining = climb_remaining,
         bonus_warning = bonus_chest_warning_state(),
+        hud_layout = hud_layout,
     })
 end
 
@@ -763,6 +786,59 @@ local function is_bonus_shard_item(item)
     return item:gsub('%.$', ''):lower():match('^shard of ') ~= nil
 end
 
+local function recent_chest_open_active()
+    if recent_chest_open.zone ~= active_zone or not recent_chest_open.sector then
+        return false
+    end
+    if (os.time() - recent_chest_open.timestamp) > BONUS_SHARD_GRACE then
+        clear_recent_chest_open()
+        return false
+    end
+    return true
+end
+
+local function note_bonus_shards(count, source)
+    if count <= 0 or not recent_chest_open_active() then
+        return false
+    end
+
+    local now = os.time()
+    if bonus_shard_window.zone ~= recent_chest_open.zone
+        or bonus_shard_window.sector ~= recent_chest_open.sector
+        or bonus_shard_window.chest_timestamp ~= recent_chest_open.timestamp
+        or (now - bonus_shard_window.timestamp) > BONUS_SHARD_GRACE then
+        bonus_shard_window.zone = recent_chest_open.zone
+        bonus_shard_window.sector = recent_chest_open.sector
+        bonus_shard_window.chest_timestamp = recent_chest_open.timestamp
+        bonus_shard_window.count = 0
+    end
+
+    bonus_shard_window.count = bonus_shard_window.count + count
+    bonus_shard_window.timestamp = now
+
+    debug_log(('matched bonus shard line from %s: count=%d total=%d sector=%s'):format(
+        tostring(source),
+        count,
+        bonus_shard_window.count,
+        recent_chest_open.sector
+    ))
+
+    if bonus_shard_window.count < 2 then
+        return false
+    end
+
+    debug_log(('matched bonus shard pair from %s: %d shards'):format(
+        tostring(source),
+        bonus_shard_window.count
+    ))
+    record_chest(recent_chest_open.sector, BONUS_AMT)
+    clear_bonus_shard_window()
+    clear_pending_reward()
+    clear_pending_chest_open()
+    clear_recent_chest_open()
+    return true
+end
+
 local function handle_bonus_shard_lines(lines, source)
     local shard_count = 0
     for _, line in ipairs(lines) do
@@ -774,16 +850,7 @@ local function handle_bonus_shard_lines(lines, source)
         end
     end
 
-    if shard_count < 2 then
-        return false
-    end
-
-    debug_log(('matched bonus shard pair from %s: %d shards'):format(
-        tostring(source),
-        shard_count
-    ))
-    record_reward_from_text(BONUS_AMT, source..' shard pair')
-    return true
+    return note_bonus_shards(shard_count, source)
 end
 
 local function handle_incoming_limbus_text(text, source)
@@ -1104,6 +1171,18 @@ require('modules.commands').register({
     hide_hud = function()
         hud_hidden = true
         text_box:visible(false)
+    end,
+
+    set_hud_layout = function(value)
+        hud_layout = value == 'minimal' and 'minimal' or 'full'
+        settings.units = settings.units or {}
+        settings.units.layout = hud_layout
+        config.save(settings, 'global')
+        update_text_box()
+    end,
+
+    get_hud_layout = function()
+        return hud_layout
     end,
 
     save_state = save_state,

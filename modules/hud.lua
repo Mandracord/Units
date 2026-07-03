@@ -62,6 +62,18 @@ local function format_units_display(field, current_units, unit_caps)
     return ('%s - %.1f%%'):format(format_value(current), (current / max) * 100)
 end
 
+local function format_short_units_display(field, current_units, unit_caps)
+    local current = tonumber(current_units[field]) or 0
+    local max = tonumber(unit_caps[field]) or 0
+    if max <= 0 then
+        return format_value(current)
+    end
+    if current >= max then
+        return WARNING_COLOR .. format_value(current)..' 100%'..RESET_COLOR
+    end
+    return ('%s %.1f%%'):format(format_value(current), (current / max) * 100)
+end
+
 local function format_obtained(value)
     return value and constants.CHECKED or constants.UNCHECKED
 end
@@ -121,15 +133,49 @@ local function all_data_collected(active_zone, limbus_temp_items)
     return true
 end
 
-function hud.update(context)
+local function chest_status_text(state)
+    if state == 'bonus' then
+        return 'B'
+    elseif state == 'std' then
+        return 'N'
+    end
+    return '-'
+end
+
+local function short_unit_label(field)
+    if field == 'Apollyon Units' then
+        return 'Apollyon'
+    elseif field == 'Temenos Units' then
+        return 'Temenos'
+    end
+    return field
+end
+
+local function update_minimal(context)
+    local active_zone = context.active_zone
+    local parts = {}
+    local unit_parts = {}
+
+    for field in context.unit_fields:it() do
+        unit_parts[#unit_parts+1] = ('%s: %s'):format(
+            short_unit_label(field),
+            format_short_units_display(field, context.current_units, context.unit_caps)
+        )
+    end
+    parts[#parts+1] = table.concat(unit_parts, ' ')
+
+    local chest_parts = {}
+    for _, s in ipairs(constants.zone_sectors[active_zone]) do
+        chest_parts[#chest_parts+1] = ('%s: %s'):format(s, chest_status_text(context.tracking[active_zone][s]))
+    end
+    parts[#parts+1] = 'Chest status: '..table.concat(chest_parts, ' ')
+
+    context.text_box:text(table.concat(parts, ' | '))
+end
+
+local function update_full(context)
     local active_zone = context.active_zone
     local text_box = context.text_box
-
-    if not constants.is_limbus_zone(active_zone) then
-        text_box:visible(false)
-        return
-    end
-
     local lines = {}
     local header = 'Limbus Units'
     local separator = string.rep('-', math.max(constants.HUD_WIDTH, #header))
@@ -185,6 +231,23 @@ function hud.update(context)
     end
 
     text_box:text(table.concat(lines, '\n'))
+end
+
+function hud.update(context)
+    local active_zone = context.active_zone
+    local text_box = context.text_box
+
+    if not constants.is_limbus_zone(active_zone) then
+        text_box:visible(false)
+        return
+    end
+
+    if context.hud_layout == 'minimal' then
+        update_minimal(context)
+    else
+        update_full(context)
+    end
+
     text_box:visible(not context.hud_hidden and constants.is_limbus_zone(active_zone))
 end
 
