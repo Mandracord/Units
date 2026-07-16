@@ -3,20 +3,6 @@ local state_defaults = require('modules.state_defaults')
 
 local state_store_module = {}
 
-local function next_reset_after(t)
-    local d = os.date('!*t', t)
-    local days_until_sunday = (8 - d.wday) % 7
-    local sunday_1500 = t
-        - (d.hour * 3600 + d.min * 60 + d.sec)
-        + days_until_sunday * 86400
-        + 15 * 3600
-
-    if sunday_1500 <= t then
-        sunday_1500 = sunday_1500 + 7 * 86400
-    end
-    return sunday_1500
-end
-
 local function state_prefix(zone)
     return zone == constants.APOLLYON and 'apollyon' or 'temenos'
 end
@@ -38,32 +24,45 @@ end
 
 function state_store_module.new(context)
     local state = nil
-    local reset_schedule_token = 0
 
     local store = {}
 
-    local function ensure_next_reset_at()
-        if not state then return nil end
-        local next_reset = tonumber(state.next_reset_at)
-        if next_reset and next_reset > 0 then
-            return next_reset
+    local function valid_sector(zone, sector)
+        if not sector or sector == 'none' then
+            return false
         end
-
-        local created = tonumber(state.created_at)
-        if created and created > 0 then
-            next_reset = next_reset_after(created)
-        else
-            next_reset = next_reset_after(os.time())
+        for _, candidate in ipairs(constants.zone_sectors[zone]) do
+            if candidate == sector then
+                return true
+            end
         end
-
-        state.next_reset_at = next_reset
-        config.save(state, 'global')
-        return next_reset
+        return false
     end
 
-    local function state_is_expired()
-        local next_reset = ensure_next_reset_at()
-        return next_reset and os.time() >= next_reset
+    local function load_chest_state(zone)
+        local prefix = state_prefix(zone)
+        local zone_tracking = {}
+        local legacy_bonus = nil
+
+        for _, sector in ipairs(constants.zone_sectors[zone]) do
+            local value = normalize_saved_state(state[('%s_%s'):format(prefix, sector)])
+            if value == 'bonus' then
+                legacy_bonus = legacy_bonus or sector
+            elseif value == 'std' then
+                zone_tracking[sector] = 'std'
+            end
+        end
+
+        local saved_last_bonus = state[prefix..'_last_bonus']
+        context.last_bonus[zone] = valid_sector(zone, saved_last_bonus) and saved_last_bonus or nil
+
+        if legacy_bonus then
+            context.last_bonus[zone] = context.last_bonus[zone] or legacy_bonus
+            zone_tracking = {}
+        end
+
+        context.tracking[zone] = zone_tracking
+        return legacy_bonus ~= nil
     end
 
     local function save_temp_item_state(zone)
@@ -120,10 +119,6 @@ function state_store_module.new(context)
 
     function store.save_state()
         if not state then return end
-        if not tonumber(state.created_at) or tonumber(state.created_at) <= 0 then
-            state.created_at = os.time()
-        end
-        ensure_next_reset_at()
         local apollyon_tracking = context.tracking[constants.APOLLYON]
         local temenos_tracking = context.tracking[constants.TEMENOS]
         state.apollyon_NW = apollyon_tracking.NW or 'none'
@@ -134,35 +129,14 @@ function state_store_module.new(context)
         state.temenos_E   = temenos_tracking.E  or 'none'
         state.temenos_W   = temenos_tracking.W  or 'none'
         state.temenos_C   = temenos_tracking.C  or 'none'
+        state.apollyon_last_bonus = context.last_bonus[constants.APOLLYON] or 'none'
+        state.temenos_last_bonus = context.last_bonus[constants.TEMENOS] or 'none'
         state.apollyon_cap = context.unit_caps['Apollyon Units'] or 0
         state.temenos_cap = context.unit_caps['Temenos Units'] or 0
         state.apollyon_climb_remaining = context.climb_remaining[constants.APOLLYON] or -1
         state.temenos_climb_remaining = context.climb_remaining[constants.TEMENOS] or -1
         save_temp_item_state(constants.APOLLYON)
         save_temp_item_state(constants.TEMENOS)
-        config.save(state, 'global')
-    end
-
-    function store.reset_weekly_tracking_state()
-        if not state then return end
-        state.created_at  = os.time()
-        state.next_reset_at = next_reset_after(os.time())
-        state.apollyon_NW = 'none'
-        state.apollyon_NE = 'none'
-        state.apollyon_SW = 'none'
-        state.apollyon_SE = 'none'
-        state.temenos_N   = 'none'
-        state.temenos_E   = 'none'
-        state.temenos_W   = 'none'
-        state.temenos_C   = 'none'
-        state.apollyon_climb_remaining = -1
-        state.temenos_climb_remaining = -1
-        context.climb_remaining[constants.APOLLYON] = -1
-        context.climb_remaining[constants.TEMENOS] = -1
-        context.tracking[constants.APOLLYON] = {}
-        context.tracking[constants.TEMENOS]  = {}
-        wipe_temp_item_state(constants.APOLLYON)
-        wipe_temp_item_state(constants.TEMENOS)
         config.save(state, 'global')
     end
 
@@ -173,51 +147,17 @@ function state_store_module.new(context)
 
     function store.load_state()
         if not state then return end
-        ensure_next_reset_at()
         context.unit_caps['Apollyon Units'] = tonumber(state.apollyon_cap) or 0
         context.unit_caps['Temenos Units'] = tonumber(state.temenos_cap) or 0
         context.climb_remaining[constants.APOLLYON] = tonumber(state.apollyon_climb_remaining) or -1
         context.climb_remaining[constants.TEMENOS] = tonumber(state.temenos_climb_remaining) or -1
-        if state_is_expired() then
-            windower.add_to_chat(167, 'Units: Weekly reset detected - chest tracking cleared.')
-            store.reset_weekly_tracking_state()
-            return
-        end
-
-        context.tracking[constants.APOLLYON] = {
-            NW = normalize_saved_state(state.apollyon_NW) ~= 'none' and normalize_saved_state(state.apollyon_NW) or nil,
-            NE = normalize_saved_state(state.apollyon_NE) ~= 'none' and normalize_saved_state(state.apollyon_NE) or nil,
-            SW = normalize_saved_state(state.apollyon_SW) ~= 'none' and normalize_saved_state(state.apollyon_SW) or nil,
-            SE = normalize_saved_state(state.apollyon_SE) ~= 'none' and normalize_saved_state(state.apollyon_SE) or nil,
-        }
-        context.tracking[constants.TEMENOS] = {
-            N = normalize_saved_state(state.temenos_N) ~= 'none' and normalize_saved_state(state.temenos_N) or nil,
-            E = normalize_saved_state(state.temenos_E) ~= 'none' and normalize_saved_state(state.temenos_E) or nil,
-            W = normalize_saved_state(state.temenos_W) ~= 'none' and normalize_saved_state(state.temenos_W) or nil,
-            C = normalize_saved_state(state.temenos_C) ~= 'none' and normalize_saved_state(state.temenos_C) or nil,
-        }
+        local migrated_apollyon = load_chest_state(constants.APOLLYON)
+        local migrated_temenos = load_chest_state(constants.TEMENOS)
         load_temp_item_state(constants.APOLLYON)
         load_temp_item_state(constants.TEMENOS)
-    end
-
-    function store.schedule_weekly_reset_check()
-        if not state then return end
-        reset_schedule_token = reset_schedule_token + 1
-        local token = reset_schedule_token
-
-        coroutine.schedule(function()
-            if token ~= reset_schedule_token then
-                return
-            end
-
-            if state and state_is_expired() then
-                windower.add_to_chat(167, 'Units: Weekly reset detected - chest tracking cleared.')
-                store.reset_weekly_tracking_state()
-                context.update_text_box()
-            end
-
-            store.schedule_weekly_reset_check()
-        end, constants.RESET_CHECK_INTERVAL)
+        if migrated_apollyon or migrated_temenos then
+            store.save_state()
+        end
     end
 
     function store.set_cap(zone_id, cap)
@@ -234,7 +174,6 @@ function state_store_module.new(context)
 
     function store.unload_character_state()
         state = nil
-        reset_schedule_token = reset_schedule_token + 1
     end
 
     return store

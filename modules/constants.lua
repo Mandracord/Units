@@ -54,7 +54,6 @@ constants.CHEST_DIST   = 7
 constants.CHEST_GRACE  = 1
 constants.REWARD_TEXT_DIST = 100
 constants.TEMP_REFRESH_PAUSE_AFTER_CHEST = 12
-constants.RESET_CHECK_INTERVAL = 60
 constants.HUD_WIDTH    = 40
 constants.CHECKED      = '[X]'
 constants.UNCHECKED    = '[-]'

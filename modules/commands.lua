@@ -11,7 +11,7 @@ function commands.register(context)
             log('  //units hide                  - Hide the HUD')
             log('  //units mini                  - Use the minimal HUD')
             log('  //units full                  - Use the full HUD')
-            log('  //units sector <sector>       - Mark a sector Opened manually')
+            log('  //units sector <sector>       - Mark a sector Normal manually')
             log('    Apollyon: NW NE SW SE')
             log('    Temenos:  N  W  E  C')
             log('  //units pos                   - Print position and detected sector')
@@ -67,9 +67,9 @@ function commands.register(context)
             if context.tracking[active_zone][s] == nil then
                 context.tracking[active_zone][s] = 'std'
                 context.save_state()
-                log(context.zone_name[active_zone]..' '..s..' marked Opened.')
+                log(context.zone_name[active_zone]..' '..s..' marked Normal.')
             else
-                log(context.zone_name[active_zone]..' '..s..' is already opened.')
+                log(context.zone_name[active_zone]..' '..s..' is already marked Normal.')
             end
             context.update_text_box()
             return

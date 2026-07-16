@@ -1,10 +1,9 @@
 local constants = require('modules.constants')
 
 local state_defaults = T{}
-state_defaults.created_at  = 0
-state_defaults.next_reset_at = 0
 state_defaults.apollyon_cap = 0
 state_defaults.apollyon_climb_remaining = -1
+state_defaults.apollyon_last_bonus = 'none'
 state_defaults.apollyon_NW = 'none'
 state_defaults.apollyon_NE = 'none'
 state_defaults.apollyon_SW = 'none'
@@ -34,6 +33,7 @@ state_defaults.temenos_W   = 'none'
 state_defaults.temenos_C   = 'none'
 state_defaults.temenos_cap = 0
 state_defaults.temenos_climb_remaining = -1
+state_defaults.temenos_last_bonus = 'none'
 state_defaults.temenos_code = 'none'
 
 for _, sector in ipairs(constants.zone_sectors[constants.TEMENOS]) do

@@ -134,12 +134,28 @@ local function all_data_collected(active_zone, limbus_temp_items)
 end
 
 local function chest_status_text(state)
-    if state == 'bonus' then
-        return 'B'
-    elseif state == 'std' then
-        return 'N'
+    return state == 'std' and 'Normal' or 'Possible Bonus'
+end
+
+local function bonus_chance(active_zone, tracking)
+    local possible = 0
+    for _, sector in ipairs(constants.zone_sectors[active_zone]) do
+        if tracking[active_zone][sector] ~= 'std' then
+            possible = possible + 1
+        end
     end
-    return '-'
+
+    local chances = {
+        [1] = '100%',
+        [2] = '50%',
+        [3] = '33%',
+        [4] = '25%',
+    }
+    return chances[possible] or 'Unknown'
+end
+
+local function last_bonus_text(active_zone, last_bonus)
+    return last_bonus[active_zone] or 'Unknown'
 end
 
 local function short_unit_label(field)
@@ -169,6 +185,8 @@ local function update_minimal(context)
         chest_parts[#chest_parts+1] = ('%s: %s'):format(s, chest_status_text(context.tracking[active_zone][s]))
     end
     parts[#parts+1] = 'Chest status: '..table.concat(chest_parts, ' ')
+    parts[#parts+1] = 'Bonus Chance: '..bonus_chance(active_zone, context.tracking)
+    parts[#parts+1] = 'Last Bonus: '..last_bonus_text(active_zone, context.last_bonus)
 
     context.text_box:text(table.concat(parts, ' | '))
 end
@@ -199,17 +217,13 @@ local function update_full(context)
     lines[#lines+1] = separator
     for _, s in ipairs(constants.zone_sectors[active_zone]) do
         local st = context.tracking[active_zone][s]
-        local tag
-        if st == 'bonus' then
-            tag = 'Opened (Bonus)'
-        elseif st == 'std' then
-            tag = 'Opened (Normal)'
-        else
-            tag = 'Not opened'
-        end
+        local tag = chest_status_text(st)
         local label = s..string.rep(' ', 3 - #s)
         lines[#lines+1] = ('%s: %s'):format(label, tag)
     end
+    lines[#lines+1] = ''
+    lines[#lines+1] = 'Bonus Chance: '..bonus_chance(active_zone, context.tracking)
+    lines[#lines+1] = 'Last Bonus: '..last_bonus_text(active_zone, context.last_bonus)
 
     if constants.zone_data_numbers[active_zone] then
         lines[#lines+1] = ''

@@ -78,6 +78,10 @@ local tracking = {
     [APOLLYON] = {},
     [TEMENOS]  = {},
 }
+local last_bonus = {
+    [APOLLYON] = nil,
+    [TEMENOS] = nil,
+}
 local limbus_temp_items = {
     [APOLLYON] = {
         code = false,
@@ -177,6 +181,7 @@ local player_near_chest = sector_detector.player_near_chest
 
 local character_state = state_store_module.new({
     tracking = tracking,
+    last_bonus = last_bonus,
     limbus_temp_items = limbus_temp_items,
     unit_caps = unit_caps,
     climb_remaining = climb_remaining,
@@ -193,7 +198,6 @@ local character_state = state_store_module.new({
 local init_player_state = character_state.init_player_state
 local save_state = character_state.save_state
 local load_state = character_state.load_state
-local schedule_weekly_reset_check = character_state.schedule_weekly_reset_check
 local unload_character_state = character_state.unload_character_state
 local reset_temp_item_counter = character_state.reset_temp_item_counter
 local set_cap = character_state.set_cap
@@ -345,6 +349,7 @@ function update_text_box()
         current_units = current_units,
         unit_caps = unit_caps,
         tracking = tracking,
+        last_bonus = last_bonus,
         limbus_temp_items = limbus_temp_items,
         climb_remaining = climb_remaining,
         bonus_warning = bonus_chest_warning_state(),
@@ -359,38 +364,43 @@ end
 function record_chest(sector, amount)
     if not active_zone then return end
     local is_bonus = amount == BONUS_AMT
-    local state_name = is_bonus and 'bonus' or 'std'
     local current_state = tracking[active_zone][sector]
     reset_temp_counter_after_chest(active_zone)
 
-    if current_state == state_name then
+    if not is_bonus and current_state ~= 'std' then
+        local possible_count = 0
+        local only_possible_sector = nil
+        for _, candidate in ipairs(zone_sectors[active_zone]) do
+            if tracking[active_zone][candidate] ~= 'std' then
+                possible_count = possible_count + 1
+                only_possible_sector = candidate
+            end
+        end
+        if possible_count == 1 and only_possible_sector == sector then
+            is_bonus = true
+            debug_log(('inferred bonus chest at %s %s because it was the only possible bonus'):format(
+                zone_name[active_zone],
+                sector
+            ))
+        end
+    end
+
+    if is_bonus then
+        tracking[active_zone] = {}
+        last_bonus[active_zone] = sector
+    elseif current_state == 'std' then
         save_state()
         update_text_box()
         return
+    else
+        tracking[active_zone][sector] = 'std'
     end
 
-    if current_state == 'bonus' and state_name == 'std' then
-        debug_log(('ignored standard chest at %s %s because bonus was already recorded'):format(
-            zone_name[active_zone],
-            sector
-        ))
-        save_state()
-        update_text_box()
-        return
-    end
-
-    if current_state == 'std' and state_name == 'std' then
-        save_state()
-        update_text_box()
-        return
-    end
-
-    tracking[active_zone][sector] = state_name
     clear_pending_chest_open()
     clear_pending_reward()
     save_state()
     debug_log(('recorded %s chest at %s %s for %d units'):format(
-        is_bonus and 'bonus' or 'standard',
+        is_bonus and 'bonus; reset normal chest tracking' or 'normal',
         zone_name[active_zone],
         sector,
         amount
@@ -1074,7 +1084,6 @@ windower.register_event('zone change', function(zone)
     if is_limbus_zone(zone) then
         active_zone = zone
         load_state()
-        schedule_weekly_reset_check()
         debug_log(('entered %s with Units v%s.'):format(zone_name[zone], _addon.version))
         request_update()
         schedule_temp_refresh()
@@ -1101,7 +1110,6 @@ windower.register_event('load', function()
         local zone = info.zone
         active_zone = is_limbus_zone(zone) and zone or nil
         load_state()
-        schedule_weekly_reset_check()
         if is_limbus_zone(zone) then
             debug_log(('loaded in %s with Units v%s.'):format(zone_name[zone], _addon.version))
             request_update()
@@ -1121,7 +1129,6 @@ windower.register_event('login', function(name)
     local zone = windower.ffxi.get_info().zone
     active_zone = is_limbus_zone(zone) and zone or nil
     load_state()
-    schedule_weekly_reset_check()
     if is_limbus_zone(zone) then
         debug_log(('logged into %s with Units v%s.'):format(zone_name[zone], _addon.version))
         request_update()
