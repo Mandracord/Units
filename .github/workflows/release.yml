@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derive release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="$(sed -n "s/.*_addon\.version = '\([^']*\)'.*/\1/p" Units.lua)"
+          test -n "$version"
+
+          tag="v$version"
+          package="Units-$tag.zip"
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "package=$package" >> "$GITHUB_OUTPUT"
+
+      - name: Package addon
+        env:
+          PACKAGE_NAME: ${{ steps.meta.outputs.package }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist/Units
+          cp Units.lua dist/Units/
+          cp -R modules dist/Units/
+
+          cd dist
+          zip -r "$PACKAGE_NAME" Units
+
+      - name: Replace release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          PACKAGE: ${{ steps.meta.outputs.package }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gh release delete "$TAG" --cleanup-tag --yes || true
+          git push origin ":refs/tags/$TAG" || true
+
+          gh release create "$TAG" "dist/$PACKAGE" \
+            --target "$GITHUB_SHA" \
+            --title "$TAG" \
+            --generate-notes

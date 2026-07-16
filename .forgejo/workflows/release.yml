@@ -1,0 +1,134 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - "main"
+  workflow_dispatch:
+
+jobs:
+  release:
+    name: Release
+    runs-on: local-docker
+    container: catthehacker/ubuntu:act-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zip curl git jq rsync
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derive metadata
+        id: meta
+        shell: bash
+        run: |
+          set -eux
+
+          version="$(sed -n "s/.*_addon\.version = '\(.*\)'.*/\1/p" Units.lua)"
+
+          test -n "$version"
+
+          tag="v$version"
+          package="Units-$tag.zip"
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "package=$package" >> "$GITHUB_OUTPUT"
+
+      - name: Package addon
+        env:
+          PACKAGE_NAME: ${{ steps.meta.outputs.package }}
+        run: |
+          set -eux
+
+          rm -rf dist
+          mkdir -p dist/Units
+
+          rsync -av \
+            --exclude '.git' \
+            --exclude '.forgejo' \
+            --exclude '.gitignore' \
+            --exclude 'dist' \
+            --exclude 'README.md' \
+            --exclude 'LICENSE' \
+            ./ dist/Units/
+
+          cd dist
+          zip -r "$PACKAGE_NAME" Units
+
+      - name: Delete existing release and tag
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -eux
+
+          api="$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY"
+
+          release_id=$(curl -s \
+            -H "Authorization: token $TOKEN" \
+            "$api/releases/tags/$TAG" | jq -r '.id // empty')
+
+          if [ -n "$release_id" ]; then
+            curl -s -X DELETE \
+              "$api/releases/$release_id" \
+              -H "Authorization: token $TOKEN" >/dev/null
+          fi
+
+          git config user.name "Forgejo Actions"
+          git config user.email "actions@git.local"
+
+          git tag -d "$TAG" 2>/dev/null || true
+          git push origin ":refs/tags/$TAG" 2>/dev/null || true
+
+      - name: Create tag and release
+        id: release
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -eux
+
+          api="$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY"
+
+          git config user.name "Forgejo Actions"
+          git config user.email "actions@git.local"
+
+          git tag "$TAG"
+          git push origin "$TAG"
+
+          response=$(curl -s -X POST "$api/releases" \
+            -H "Authorization: token $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"tag_name\":\"$TAG\",\"name\":\"$TAG\"}")
+
+          echo "$response"
+
+          id=$(echo "$response" | jq -r '.id')
+
+          [ "$id" != "null" ]
+          [ -n "$id" ]
+
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+      - name: Upload asset
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ID: ${{ steps.release.outputs.id }}
+          PACKAGE: ${{ steps.meta.outputs.package }}
+        run: |
+          set -eux
+
+          api="$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY/releases/$ID/assets"
+
+          curl -s -X POST "$api?name=$PACKAGE" \
+            -H "Authorization: token $TOKEN" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary "@dist/$PACKAGE"
